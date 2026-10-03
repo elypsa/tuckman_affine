@@ -1,0 +1,48 @@
+# renv - exclude installed packages but keep configuration
+
+renv/library/
+renv/local/
+renv/cellar/
+renv/lock/
+renv/python/
+renv/sandbox/
+renv/staging/
+
+# Claude Code directories
+.claude/
+claude/
+CLAUDE_files/
+  
+
+# R and RStudio files
+.Rhistory
+.RData
+.Ruserdata
+*.Rproj
+*.Rproj.user
+
+# Generated HTML outputs
+*.html
+*_files/
+
+# Generated PNG outputs
+*.png
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+*.temp
+.httr-oauth
+
+# R package development
+*.tar.gz
+*.Rcheck/
