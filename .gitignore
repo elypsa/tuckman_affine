@@ -46,3 +46,6 @@ CLAUDE_files/
 # R package development
 *.tar.gz
 *.Rcheck/
+
+# materials
+materials/

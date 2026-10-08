@@ -103,7 +103,7 @@ build_panel <- function(start_date = "2014-01-05", end_date = "2022-01-21") {
 
   # Define maturities used in estimation
   # Need yields at these points for fitting
-  maturities <- c(2, 3, 10, 11, 14, 15, 16)
+  maturities <- c(1:10, 12, 15, 17, 20, 25, 27, 30)
 
   return(list(
     panel = panel,
