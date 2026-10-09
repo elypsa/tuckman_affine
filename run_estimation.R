@@ -12,6 +12,7 @@ source("R/03_estimate.R")
 source("R/04_factors.R")
 source("R/05_premia.R")
 source("R/06_figures.R")
+source("R/kalman_aux.R")
 
 library(dplyr)
 
@@ -55,6 +56,97 @@ cat("Step 3: Extracting latent factors...\n")
 factors <- est$params$mu$factors
 
 cat("  Factors extracted for all", nrow(factors), "dates\n\n")
+
+# Step 3b: Kalman-filtered factors (alternative to the exact-fit factors)
+cat("Step 3b: Kalman-filtered factors...\n")
+kf_res <- extract_factors_kalman(
+  panel = panel,
+  maturities = maturities,
+  alpha = c(est$params$a_r, est$params$a_m, est$params$a_l),
+  sigma = c(est$params$s_m, est$params$s_l, est$params$rho),
+  mu = est$params$mu$mu
+)
+factors_kalman <- kf_res$factors
+cat("  h =", signif(kf_res$h, 3), " loglik =", round(kf_res$loglik, 1), "\n")
+cat(
+  "  RMS diff vs exact-fit factors (bp): m =",
+  round(sqrt(mean((factors_kalman[, "m"] - factors[, "m"])^2)) * 1e4, 1),
+  ", l =",
+  round(sqrt(mean((factors_kalman[, "l"] - factors[, "l"])^2)) * 1e4, 1),
+  "\n\n"
+)
+
+# Fit diagnostics: model-implied yields / forwards from a (r, m, l) factor matrix
+alpha_hat <- c(est$params$a_r, est$params$a_m, est$params$a_l)
+sigma_hat <- c(est$params$s_m, est$params$s_l, est$params$rho)
+mu_hat <- est$params$mu$mu
+
+fit_yields <- function(fac, tau) {
+  U <- Ups_yield(tau, alpha_hat)
+  sweep(fac %*% t(U), 2, mu_hat * (1 - rowSums(U)) - C_conv(tau, alpha_hat, sigma_hat), "+")
+}
+fit_fwd <- function(fac, tau) {
+  U <- Ups_fwd(tau, alpha_hat, tenor = 1)
+  sweep(fac %*% t(U), 2, mu_hat * (1 - rowSums(U)) - C_fwd(tau, alpha_hat, sigma_hat, tenor = 1), "+")
+}
+
+# (1) Fitting error at the 2y and 10y benchmark forwards (bp, RMSE over sample)
+f_obs <- cbind(`2y fwd` = panel$fwd_02, `10y fwd` = panel$fwd_10)
+bench_err <- rbind(
+  `Exact fit` = sqrt(colMeans((f_obs - fit_fwd(factors, c(2, 10)))^2)) * 1e4,
+  Kalman = sqrt(colMeans((f_obs - fit_fwd(factors_kalman, c(2, 10)))^2)) * 1e4
+)
+cat("Benchmark forward fitting error, RMSE (bp):\n")
+print(round(bench_err, 2))
+
+# (2) Yield RMSE by maturity, both methods (bp)
+Y_obs <- as.matrix(panel[, paste0("SVENY", sprintf("%02d", maturities))])
+rmse_by_mat <- rbind(
+  `Exact fit` = sqrt(colMeans((Y_obs - fit_yields(factors, maturities))^2)) * 1e4,
+  Kalman = sqrt(colMeans((Y_obs - fit_yields(factors_kalman, maturities))^2)) * 1e4
+)
+colnames(rmse_by_mat) <- paste0(maturities, "y")
+cat("\nYield RMSE by maturity (bp):\n")
+print(round(rmse_by_mat, 2))
+cat("\n")
+
+library(ggplot2)
+fac_cmp <- do.call(
+  rbind,
+  lapply(c("m", "l"), function(f) {
+    rbind(
+      data.frame(
+        date = panel$date,
+        factor = f,
+        method = "Exact fit (2y/10y)",
+        value = factors[, f]
+      ),
+      data.frame(
+        date = panel$date,
+        factor = f,
+        method = "Kalman",
+        value = factors_kalman[, f]
+      )
+    )
+  })
+)
+fig_factors_cmp <- ggplot(fac_cmp, aes(date, value * 100, colour = method)) +
+  geom_line(linewidth = 0.4) +
+  facet_wrap(
+    ~factor,
+    ncol = 1,
+    scales = "free_y",
+    labeller = as_labeller(c(m = "Medium factor m", l = "Long factor l"))
+  ) +
+  labs(
+    x = NULL,
+    y = "Percent",
+    colour = NULL,
+    title = "Latent factors: exact fit vs Kalman filter"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+print(fig_factors_cmp)
 
 # Step 4: Extract price of risk lambda
 cat("Step 4: Extracting time-varying price of risk...\n")
@@ -210,6 +302,10 @@ saveRDS(
   list(
     params = est$params,
     factors = factors,
+    factors_kalman = factors_kalman,
+    kalman_h = kf_res$h,
+    fit_bench_err_bp = bench_err,
+    fit_rmse_by_maturity_bp = rmse_by_mat,
     lambda_t = lambda_t,
     panel = panel,
     weights = weights,
@@ -220,7 +316,8 @@ saveRDS(
       fig_9_6 = fig_9_6,
       fig_9_7 = fig_9_7,
       fig_9_8 = fig_9_8,
-      fig_9_10 = fig_9_10
+      fig_9_10 = fig_9_10,
+      fig_factors_cmp = fig_factors_cmp
     )
   ),
   "data/estimation_results.rds"
